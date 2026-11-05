@@ -2,7 +2,7 @@
 
 import modal
 
-MODEL_ID = "Qwen/Qwen3-1.7B"
+MODEL_ID = "Qwen/Qwen3-0.6B"
 CACHE_DIR = "/model-cache"
 
 # 앱 이름, 모델 파일을 보관할 저장소, 원격 컨테이너 환경을 정의합니다.
@@ -15,8 +15,8 @@ image = (
 )
 
 
-# 이 클래스의 메서드는 Modal의 L4 GPU 컨테이너에서 실행됩니다.
-@app.cls(image=image, gpu="L4", volumes={CACHE_DIR: cache}, timeout=600)
+# 사용 가능한 GPU(L4, A10, T4)를 골라 특정 GPU의 배정 대기를 줄입니다.
+@app.cls(image=image, gpu="any", volumes={CACHE_DIR: cache}, timeout=600)
 class ChatModel:
     # 새 컨테이너가 시작될 때 한 번 실행되므로 모델을 매 질문마다 로드하지 않습니다.
     @modal.enter()
@@ -29,7 +29,7 @@ class ChatModel:
             model_id=MODEL_ID,
             task="text-generation",
             device=0,
-            model_kwargs={"dtype": "auto"},
+            model_kwargs={"dtype": "float16"},
             pipeline_kwargs={
                 "max_new_tokens": 256,
                 "do_sample": True,
