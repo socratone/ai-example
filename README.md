@@ -16,10 +16,10 @@ uv run --package modal-chat modal setup
 ## 실행
 
 ```sh
-uv run --package modal-chat modal run -m modal_chat.app
+uv run --package modal-chat modal run -q -m modal_chat.app
 ```
 
-`질문> ` 프롬프트에 메시지를 입력합니다. `/exit`으로 종료할 수 있습니다. 첫 실행에서는 원격 이미지 생성과 모델 다운로드 때문에 시간이 걸릴 수 있습니다. 모델 파일은 Modal Volume에 캐시됩니다. 응답은 생성 완료 후 한 번에 표시됩니다.
+`-q`는 Modal의 진행 표시가 터미널 입력 프롬프트와 겹치지 않도록 합니다. `질문> ` 프롬프트에 메시지를 입력합니다. `/exit`으로 종료할 수 있습니다. 첫 실행에서는 원격 이미지 생성과 모델 다운로드 때문에 시간이 걸릴 수 있습니다. 모델 파일은 Modal Volume에 캐시됩니다. 응답은 생성 완료 후 한 번에 표시됩니다.
 
 ## 테스트
 
