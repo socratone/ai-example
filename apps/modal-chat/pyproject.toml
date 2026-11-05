@@ -1,0 +1,10 @@
+[project]
+name = "modal-chat"
+version = "0.1.0"
+description = "Terminal chat with a model running on Modal"
+requires-python = ">=3.12,<3.13"
+dependencies = ["modal>=1.0,<2"]
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
