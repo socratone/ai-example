@@ -1,0 +1,10 @@
+[project]
+name = "langgraph-calculator"
+version = "0.1.0"
+description = "Terminal calculator agent with LangGraph and a model on Modal"
+requires-python = ">=3.12,<3.13"
+dependencies = ["modal>=1.0,<2", "langgraph>=1,<2"]
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
