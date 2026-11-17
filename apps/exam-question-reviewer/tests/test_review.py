@@ -1,15 +1,16 @@
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import nullcontext, redirect_stderr, redirect_stdout
 from io import StringIO
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import ModuleType, SimpleNamespace
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-import httpx
-from openai import OpenAI
+from modal.exception import AuthError
 from PIL import Image
 
+from exam_question_reviewer.app import ExamReviewer, cache
 from exam_question_reviewer.cli import main
 from exam_question_reviewer.reviewer import DEFAULT_MODEL, ReviewError, review_image
 
@@ -34,56 +35,14 @@ class ReviewTest(TestCase):
         self.directory = Path(temp.name)
         self.png = self.directory / "question-001.png"
         Image.new("RGB", (160, 120), "white").save(self.png)
-        self.requests = []
 
-    def client_for(self, output):
-        def respond(request):
-            self.requests.append((request.url.path, json.loads(request.content)))
-            return httpx.Response(200, json={
-                "id": "resp_test",
-                "object": "response",
-                "status": "completed",
-                "created_at": 0,
-                "model": DEFAULT_MODEL,
-                "output": [{
-                    "type": "message",
-                    "id": "msg_test",
-                    "role": "assistant",
-                    "status": "completed",
-                    "content": [output],
-                }],
-            })
+    def test_validated_png_bytes_go_to_modal_method_and_yield_issue(self):
+        generate = Mock(return_value=json.dumps(MULTIPLE_ANSWERS))
 
-        client = OpenAI(
-            api_key="test-key",
-            base_url="https://review.example/v1",
-            http_client=httpx.Client(transport=httpx.MockTransport(respond)),
-            max_retries=0,
-        )
-        self.addCleanup(client.close)
-        return client
+        review = review_image(generate, self.png)
 
-    def output_text(self, report):
-        return {"type": "output_text", "text": json.dumps(report), "annotations": []}
-
-    def test_sends_image_only_as_source_and_parses_confirmed_issue(self):
-        client = self.client_for(self.output_text(MULTIPLE_ANSWERS))
-
-        review = review_image(client, self.png, DEFAULT_MODEL)
-
+        generate.assert_called_once_with(self.png.read_bytes())
         self.assertEqual(review.model_dump(), MULTIPLE_ANSWERS)
-        [(path, body)] = self.requests
-        self.assertEqual(path, "/v1/responses")
-        self.assertEqual(body["model"], DEFAULT_MODEL)
-        self.assertEqual(body["reasoning"], {"effort": "medium"})
-        self.assertFalse(body["store"])
-        self.assertTrue(body["text"]["format"]["strict"])
-        [message] = body["input"]
-        [task, source] = message["content"]
-        self.assertEqual(task["type"], "input_text")
-        self.assertEqual(source["type"], "input_image")
-        self.assertEqual(source["detail"], "high")
-        self.assertTrue(source["image_url"].startswith("data:image/png;base64,"))
 
     def test_incomplete_evidence_is_reported_as_needs_review(self):
         report = {
@@ -93,34 +52,33 @@ class ReviewTest(TestCase):
             "issues": [],
             "limitations": ["보기 ④의 오른쪽 끝이 보이는 원본이 필요합니다."],
         }
-        client = self.client_for(self.output_text(report))
 
-        self.assertEqual(review_image(client, self.png, DEFAULT_MODEL).model_dump(), report)
+        self.assertEqual(review_image(lambda _: json.dumps(report), self.png).model_dump(), report)
 
-    def test_invalid_verdict_is_a_processing_failure(self):
-        report = {**MULTIPLE_ANSWERS, "issues": []}
-        client = self.client_for(self.output_text(report))
+    def test_invalid_verdict_or_truncated_json_is_a_processing_failure(self):
+        for result in [json.dumps({**MULTIPLE_ANSWERS, "issues": []}), '{"verdict":']:
+            with self.subTest(result=result):
+                with self.assertRaisesRegex(ReviewError, "incomplete or inconsistent"):
+                    review_image(lambda _: result, self.png)
 
-        with self.assertRaisesRegex(ReviewError, "incomplete or inconsistent"):
-            review_image(client, self.png, DEFAULT_MODEL)
+    def test_remote_inference_failure_is_reported(self):
+        generate = Mock(side_effect=RuntimeError("GPU unavailable"))
 
-    def test_refusal_is_a_processing_failure(self):
-        client = self.client_for({"type": "refusal", "refusal": "Unable to review."})
+        with self.assertRaisesRegex(ReviewError, "Modal inference failed: GPU unavailable"):
+            review_image(generate, self.png)
 
-        with self.assertRaisesRegex(ReviewError, "did not return a structured review"):
-            review_image(client, self.png, DEFAULT_MODEL)
-
-    def test_folder_review_continues_past_invalid_file(self):
+    def test_folder_review_skips_invalid_file_and_continues(self):
         bad_png = self.directory / "question-000.png"
         bad_png.write_bytes(b"broken")
         (self.directory / "notes.txt").write_text("Ignore this.", encoding="utf-8")
-        client = self.client_for(self.output_text(MULTIPLE_ANSWERS))
+        generate = Mock(return_value=json.dumps(MULTIPLE_ANSWERS))
+        model = SimpleNamespace(generate=SimpleNamespace(remote=generate))
         stdout, stderr = StringIO(), StringIO()
 
         with (
             patch("sys.argv", ["exam-question-reviewer", str(self.directory), str(self.png)]),
-            patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}),
-            patch("exam_question_reviewer.cli.OpenAI", return_value=client),
+            patch("exam_question_reviewer.cli.app.run", return_value=nullcontext()) as run_app,
+            patch("exam_question_reviewer.cli.ExamReviewer", return_value=model) as reviewer,
             redirect_stdout(stdout),
             redirect_stderr(stderr),
         ):
@@ -130,4 +88,45 @@ class ReviewTest(TestCase):
         failed, succeeded = json.loads(stdout.getvalue())["results"]
         self.assertIn("error", failed)
         self.assertEqual(succeeded["review"]["verdict"], "issue_found")
-        self.assertEqual(len(self.requests), 1)
+        generate.assert_called_once_with(self.png.read_bytes())
+        reviewer.assert_called_once_with(model_id=DEFAULT_MODEL)
+        run_app.assert_called_once()
+
+    def test_modal_auth_failure_exits_cleanly(self):
+        stdout, stderr = StringIO(), StringIO()
+        with (
+            patch("sys.argv", ["exam-question-reviewer", str(self.png)]),
+            patch("exam_question_reviewer.cli.app.run", side_effect=AuthError("Please run modal setup.")),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            exit_code = main()
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("modal setup", stderr.getvalue())
+        self.assertEqual(json.loads(stdout.getvalue())["results"], [])
+
+    def test_gpu_method_passes_image_and_json_schema_to_vllm(self):
+        result = SimpleNamespace(outputs=[SimpleNamespace(text=json.dumps(MULTIPLE_ANSWERS))])
+        engine = Mock()
+        engine.chat.return_value = [result]
+        vllm = ModuleType("vllm")
+        vllm.LLM = Mock(return_value=engine)
+        vllm.SamplingParams = Mock()
+        sampling_params = ModuleType("vllm.sampling_params")
+        sampling_params.StructuredOutputsParams = Mock()
+
+        with (
+            patch.dict("sys.modules", {"vllm": vllm, "vllm.sampling_params": sampling_params}),
+            patch.object(cache, "commit"),
+        ):
+            output = ExamReviewer().generate.local(self.png.read_bytes())
+
+        self.assertEqual(json.loads(output), MULTIPLE_ANSWERS)
+        self.assertEqual(vllm.LLM.call_args.kwargs["model"], DEFAULT_MODEL)
+        schema = sampling_params.StructuredOutputsParams.call_args.kwargs["json"]
+        self.assertIn("verdict", schema["properties"])
+        [messages] = engine.chat.call_args.args
+        question = messages[1]["content"][0]["image_pil"]
+        self.assertEqual(question.size, (160, 120))
+        self.assertEqual(question.mode, "RGB")

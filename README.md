@@ -38,7 +38,7 @@ uv run --package exam-pdf-splitter exam-pdf-splitter ./exam.pdf
 
 ## 시험 문항 이미지 검수
 
-`OPENAI_API_KEY`를 설정한 후 분할한 문항 이미지나 폴더를 입력합니다.
+Modal 계정을 설정한 후 분할한 문항 이미지나 폴더를 입력합니다. 모델은 Modal GPU에서 실행합니다.
 
 ```sh
 uv run --package exam-question-reviewer exam-question-reviewer ./exam-questions
@@ -55,4 +55,4 @@ uv run --package exam-pdf-splitter python -m unittest discover -s apps/exam-pdf-
 uv run --package exam-question-reviewer python -m unittest discover -s apps/exam-question-reviewer/tests
 ```
 
-테스트는 외부 모델 API를 호출하지 않습니다.
+테스트는 Modal GPU를 호출하지 않습니다.

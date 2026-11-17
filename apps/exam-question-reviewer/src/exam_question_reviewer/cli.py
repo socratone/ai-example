@@ -1,10 +1,11 @@
 import argparse
 import json
-import os
 from pathlib import Path
 import sys
 
-from openai import OpenAI
+from modal.exception import Error as ModalError
+
+from .app import ExamReviewer, app
 
 from .reviewer import DEFAULT_MODEL, ReviewError, review_image
 
@@ -41,22 +42,24 @@ def main() -> int:
     except (OSError, ReviewError) as exc:
         parser.error(str(exc))
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        parser.error("Set OPENAI_API_KEY before running the reviewer.")
-
     results = []
     failed = False
-    with OpenAI(api_key=api_key, timeout=120.0) as client:
-        for path in paths:
-            print(f"Reviewing {path.name}", file=sys.stderr)
-            try:
-                review = review_image(client, path, args.model)
-                results.append({"image": str(path), "review": review.model_dump(mode="json")})
-            except ReviewError as exc:
-                print(f"{path.name}: {exc}", file=sys.stderr)
-                results.append({"image": str(path), "error": str(exc)})
-                failed = True
+    print("Starting the Modal review app.", file=sys.stderr)
+    try:
+        with app.run():
+            model = ExamReviewer(model_id=args.model)
+            for path in paths:
+                print(f"Reviewing {path.name}", file=sys.stderr)
+                try:
+                    review = review_image(model.generate.remote, path)
+                    results.append({"image": str(path), "review": review.model_dump(mode="json")})
+                except ReviewError as exc:
+                    print(f"{path.name}: {exc}", file=sys.stderr)
+                    results.append({"image": str(path), "error": str(exc)})
+                    failed = True
+    except ModalError as exc:
+        print(f"Modal app failed: {exc}", file=sys.stderr)
+        failed = True
 
     print(json.dumps({"model": args.model, "results": results}, ensure_ascii=False, indent=2))
     return int(failed)

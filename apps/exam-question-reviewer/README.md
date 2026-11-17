@@ -4,7 +4,15 @@
 
 ## 실행
 
-Python 3.12와 uv가 필요합니다. `OPENAI_API_KEY`를 환경 변수로 설정하고 저장소 루트에서 실행하세요. 기본 모델은 `gpt-5.4-mini`이며 추론 강도는 `medium`입니다. `--model`로 이미지 입력과 Structured Outputs를 지원하는 모델을 지정할 수 있습니다. 문항 이미지는 OpenAI API에 전송되며 API 사용료가 적용됩니다.
+Python 3.12, uv, GPU를 사용할 수 있는 Modal 계정이 필요합니다. 처음 한 번 Modal 계정 인증을 진행하세요.
+
+```sh
+uv run --package exam-question-reviewer modal setup
+```
+
+기본 모델은 Modal의 L40S GPU에서 실행하는 [Qwen3-VL-8B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct)입니다. 문항 이미지는 Modal 컨테이너에 전달됩니다. 첫 실행은 컨테이너 준비와 모델 다운로드로 더 오래 걸릴 수 있습니다. 이전에 내려받은 가중치는 Modal Volume에서 다시 읽습니다. GPU 사용료는 Modal 계정에 청구됩니다.
+
+저장소 루트에서 실행합니다. `--model`로 같은 GPU에서 구동 가능한 다른 Qwen3-VL-Instruct 모델을 지정할 수 있습니다.
 
 ```sh
 # 한 문항 검수

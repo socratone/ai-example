@@ -3,7 +3,7 @@ name = "exam-question-reviewer"
 version = "0.1.0"
 description = "Review exam question images for errors"
 requires-python = ">=3.12,<3.13"
-dependencies = ["openai>=2,<3", "pillow>=11,<14", "pydantic>=2,<3"]
+dependencies = ["modal>=1,<2", "pillow>=11,<14", "pydantic>=2,<3"]
 
 [project.scripts]
 exam-question-reviewer = "exam_question_reviewer.cli:main"

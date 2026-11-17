@@ -1,19 +1,13 @@
-from base64 import b64encode
+from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
 from typing import Literal, Self
 
-from openai import APIError, APIStatusError, OpenAI, omit
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
-DEFAULT_MODEL = "gpt-5.4-mini"
-IMAGE_FORMATS = {
-    "PNG": "image/png",
-    "JPEG": "image/jpeg",
-    "WEBP": "image/webp",
-    "GIF": "image/gif",
-}
+DEFAULT_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
+IMAGE_FORMATS = {"PNG", "JPEG", "WEBP", "GIF"}
 
 REVIEW_INSTRUCTIONS = """
 당신은 출제된 시험 문항의 오류를 검수한다. 이미지는 공통 지문을 포함할 수 있는 문항 하나다.
@@ -90,45 +84,26 @@ class Review(BaseModel):
         return self
 
 
-def image_data_url(path: Path) -> str:
+def read_image(path: Path) -> bytes:
     try:
         data = path.read_bytes()
         with Image.open(BytesIO(data)) as image:
-            mime_type = IMAGE_FORMATS.get(image.format)
-            if mime_type is None or getattr(image, "is_animated", False):
+            if image.format not in IMAGE_FORMATS or getattr(image, "is_animated", False):
                 raise ReviewError("Use a PNG, JPEG, WebP, or non-animated GIF image.")
             image.verify()
     except (OSError, SyntaxError, Image.DecompressionBombError) as exc:
         raise ReviewError("The image could not be read. Check that the file is a valid image.") from exc
-    return f"data:{mime_type};base64,{b64encode(data).decode('ascii')}"
+    return data
 
 
-def review_image(client: OpenAI, path: Path, model: str) -> Review:
-    url = image_data_url(path)
+def review_image(generate: Callable[[bytes], str], path: Path) -> Review:
+    image = read_image(path)
     try:
-        response = client.responses.parse(
-            model=model,
-            instructions=REVIEW_INSTRUCTIONS,
-            input=[{
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": "이 이미지에 포함된 시험 문항 하나를 검수해 주세요."},
-                    {"type": "input_image", "image_url": url, "detail": "high"},
-                ],
-            }],
-            text_format=Review,
-            reasoning={"effort": "medium"} if model == DEFAULT_MODEL else omit,
-            store=False,
-        )
-    except APIStatusError as exc:
-        raise ReviewError(f"The review API returned HTTP {exc.status_code}.") from exc
-    except APIError as exc:
-        raise ReviewError("The review API request failed. Check your connection and try again.") from exc
+        result = generate(image)
+    except Exception as exc:
+        # Remote user code errors can arrive as ordinary Python exceptions.
+        raise ReviewError(f"Modal inference failed: {exc}") from exc
+    try:
+        return Review.model_validate_json(result)
     except ValidationError as exc:
         raise ReviewError("The model returned an incomplete or inconsistent review.") from exc
-
-    if response.status != "completed":
-        raise ReviewError(f"The review did not complete (status: {response.status}).")
-    if response.output_parsed is None:
-        raise ReviewError("The model did not return a structured review.")
-    return response.output_parsed
