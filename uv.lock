@@ -6,6 +6,7 @@ requires-python = "==3.12.*"
 members = [
     "ai-example",
     "exam-pdf-splitter",
+    "exam-question-reviewer",
     "langgraph-calculator",
     "modal-chat",
 ]
@@ -202,6 +203,23 @@ dependencies = [
 requires-dist = [
     { name = "pillow", specifier = ">=11,<14" },
     { name = "pymupdf", specifier = ">=1.26,<2" },
+]
+
+[[package]]
+name = "exam-question-reviewer"
+version = "0.1.0"
+source = { editable = "apps/exam-question-reviewer" }
+dependencies = [
+    { name = "modal" },
+    { name = "pillow" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "modal", specifier = ">=1,<2" },
+    { name = "pillow", specifier = ">=11,<14" },
+    { name = "pydantic", specifier = ">=2,<3" },
 ]
 
 [[package]]

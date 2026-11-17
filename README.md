@@ -1,6 +1,6 @@
 # ai-example
 
-uv 워크스페이스 기반 모노레포입니다. `modal-chat`은 Modal GPU의 Qwen 모델과 대화하는 터미널 앱입니다. `langgraph-calculator`는 LangGraph가 사칙연산 도구를 호출할 수 있는 별도 터미널 앱입니다. 두 모델 앱 모두 질문마다 독립적으로 처리하며 대화 기록은 저장하지 않습니다. `exam-pdf-splitter`는 시험지 PDF를 문항별 PNG로 저장하는 로컬 앱입니다.
+uv 워크스페이스 기반 모노레포입니다. `modal-chat`은 Modal GPU의 Qwen 모델과 대화하는 터미널 앱입니다. `langgraph-calculator`는 LangGraph가 사칙연산 도구를 호출할 수 있는 별도 터미널 앱입니다. 두 모델 앱 모두 질문마다 독립적으로 처리하며 대화 기록은 저장하지 않습니다. `exam-pdf-splitter`는 시험지 PDF를 문항별 PNG로 저장하는 로컬 앱입니다. `exam-question-reviewer`는 문항 이미지에서 출제 오류를 검수합니다.
 
 ## 준비
 
@@ -36,12 +36,23 @@ uv run --package exam-pdf-splitter exam-pdf-splitter ./exam.pdf
 
 분할 옵션과 스캔본 사용법은 [exam-pdf-splitter README](apps/exam-pdf-splitter/README.md)를 참고하세요.
 
+## 시험 문항 이미지 검수
+
+Modal 계정을 설정한 후 분할한 문항 이미지나 폴더를 입력합니다. 모델은 Modal GPU에서 실행합니다.
+
+```sh
+uv run --package exam-question-reviewer exam-question-reviewer ./exam-questions
+```
+
+판정 기준과 결과 형식은 [exam-question-reviewer README](apps/exam-question-reviewer/README.md)를 참고하세요.
+
 ## 테스트
 
 ```sh
 uv run --package modal-chat python -m unittest discover -s apps/modal-chat/tests
 uv run --package langgraph-calculator python -m unittest discover -s apps/langgraph-calculator/tests
 uv run --package exam-pdf-splitter python -m unittest discover -s apps/exam-pdf-splitter/tests
+uv run --package exam-question-reviewer python -m unittest discover -s apps/exam-question-reviewer/tests
 ```
 
-이 테스트는 Modal 호출 없이 터미널 입력과 오류 처리를 확인합니다.
+테스트는 Modal GPU를 호출하지 않습니다.
